@@ -10,7 +10,9 @@ public class MathCommand implements ConsoleCommands {
 
     private String header;
     private Map<String, Double> variables;
-    private final String operations[] = {"var", "a(", "m(", "d(", "defined"};
+    private final String operations[] = {"var", "a(", "m(", "d(", "defined", "linearEq"};
+    private final double EPSILON = 1e-10;
+
 
     public MathCommand(String header){
         this.header = header;
@@ -22,25 +24,35 @@ public class MathCommand implements ConsoleCommands {
         String parameters = command.split("jmath\\s+")[1];
         // jmath a(2 : defined integral trap -1 1 a(m(3 : x :x : x) : m(-1 : x : x) : x : -1))
         String firstOp = this.firstOperationAppear(parameters);
-        switch (firstOp){
-            case "var" : parameters = parameters.split("var\\s+")[1];
-                this.addVariables(parameters);
-                break;
-            case "defined" : Console.printLineBold(ConsoleColors.GREEN, "jmath: op = " + this.definedIntegral(parameters)
-                    ,false, Optional.of("   "));
-                break;
-            case "a(" : Console.printLineBold(ConsoleColors.GREEN, "jmath: op = " + this.sum(parameters)
-                    , false, Optional.of("   "));
-                break;
-            case "m(" : Console.printLineBold(ConsoleColors.GREEN, "jmath: op = " + this.multiply(parameters)
-                    ,false, Optional.of("   "));
-                break;
-            case "d(" : Console.printLineBold(ConsoleColors.GREEN, "jmath: op = " + this.divition(parameters)
-                    ,false, Optional.of("   "));
-                break;
-        }
-        try {
 
+        try {
+            switch (firstOp){
+                case "var" : parameters = parameters.split("var\\s+")[1];
+                    this.addVariables(parameters);
+                    break;
+                case "linearEq" : String variables[] = parameters.split("linearEq")[1].trim().split("solve")[0]
+                        .split("\\s+");
+                    double values[] = this.linealEquation(parameters);
+                    if(values != null)
+                        for(int i = 0; i < values.length; i++)
+                            Console.printLineBold(ConsoleColors.WHITE, variables[i] + ": " + values[i],
+                                    false, Optional.of("   "));
+                    Console.printLineBold(ConsoleColors.WHITE, "    ------    ",
+                            false, Optional.of("   "));
+                    break;
+                case "defined" : Console.printLineBold(ConsoleColors.GREEN, "jmath: op = " + this.definedIntegral(parameters)
+                        ,false, Optional.of("   "));
+                    break;
+                case "a(" : Console.printLineBold(ConsoleColors.GREEN, "jmath: op = " + this.sum(parameters)
+                        , false, Optional.of("   "));
+                    break;
+                case "m(" : Console.printLineBold(ConsoleColors.GREEN, "jmath: op = " + this.multiply(parameters)
+                        ,false, Optional.of("   "));
+                    break;
+                case "d(" : Console.printLineBold(ConsoleColors.GREEN, "jmath: op = " + this.divition(parameters)
+                        ,false, Optional.of("   "));
+                    break;
+            }
         }catch (Exception e){
             Console.printFailure("jmath: bad syntax",true, Optional.of("   "));
         }
@@ -60,6 +72,7 @@ public class MathCommand implements ConsoleCommands {
             add("a( -value- : -value- : ...)");
             add("d( -value- : -value- : ...)");
             add("m( -value- : -value- : ...)");
+            add("linearEq -x y z ...- solve -eq1- | -eq2- | -eq3- | ...");
         }};
         return commands;
     }
@@ -73,6 +86,7 @@ public class MathCommand implements ConsoleCommands {
             add("adds all numbers inside parenthesis");
             add("divides all numbers inside parenthesis");
             add("multiplies all numbers inside parenthesis");
+            add("solves the linear equation");
         }};
         return commands;
     }
@@ -91,6 +105,8 @@ public class MathCommand implements ConsoleCommands {
             add("m()");
             add("trap");
             add("trapIter");
+            add("linearEq");
+            add("solve");
         }};
         return keywords;
     }
@@ -485,5 +501,83 @@ public class MathCommand implements ConsoleCommands {
 
         return firstNumber * (this.divition("d(" + secondNumber + " : 2)") + loopValue
                 + this.divition("d(" + thirdNumber + " : 2)"));
+    }
+
+    private double[] linealEquation(String parameters){
+        parameters = parameters.split("linearEq")[1];
+        String variables[] = parameters.trim().split("solve")[0].split("\\s+");
+
+        String equations[] = parameters.split("solve")[1].split("\\|");
+
+        double matrix[][] = new double[equations.length][variables.length];
+        double vector[] = new double[equations.length];
+        // jmath linearEq x y z solve x + 2y + 3z = 4 | 5x + 6y + 7z = 8 | 9x + 10y + 11z = 12
+        for(int y = 0; y < matrix.length; y++){
+            equations[y] = equations[y].replaceAll("\\s+", "");
+            for(int var = 0; var < variables.length; var++){
+                if(equations[y].contains(variables[var])){
+                    int pos = equations[y].indexOf(variables[var]);
+                    if(pos == 0)
+                        matrix[y][var] = 1;
+                    else{
+                        int initPos = pos;
+                        while (initPos > 0 && equations[y].charAt(initPos) != '+' && equations[y].charAt(initPos) != '-')
+                            initPos--;
+
+                        String num = equations[y].substring(initPos, pos);
+                        matrix[y][var] = num.equals("-") || num.equals("+") ? (num.equals("-") ? -1 : 1) :
+                                Double.valueOf(num);
+                    }
+                }else
+                    matrix[y][var] = 0;
+            }
+            vector[y] = Double.valueOf(equations[y].split("=")[1]);
+        }
+
+        return this.gauss(matrix, vector);
+    }
+
+    private double[] gauss(double matrix[][], double b[]){
+        int n = b.length;
+
+        for (int p = 0; p < n; p++) {
+
+            // find pivot row and swap
+            int max = p;
+            for (int i = p + 1; i < n; i++) {
+                if (Math.abs(matrix[i][p]) > Math.abs(matrix[max][p])) {
+                    max = i;
+                }
+            }
+            double[] temp = matrix[p]; matrix[p] = matrix[max]; matrix[max] = temp;
+            double   t    = b[p]; b[p] = b[max]; b[max] = t;
+
+            // singular or nearly singular
+            if (Math.abs(matrix[p][p]) <= EPSILON) {
+                Console.printFailure("Matrix is singular or almos singular", false, Optional.of("   "));
+                return null;
+            }
+
+            // pivot within A and b
+            for (int i = p + 1; i < n; i++) {
+                double alpha = matrix[i][p] / matrix[p][p];
+                b[i] -= alpha * b[p];
+                for (int j = p; j < n; j++) {
+                    matrix[i][j] -= alpha * matrix[p][j];
+                }
+            }
+        }
+
+        // back substitution
+        double[] x = new double[n];
+        for (int i = n - 1; i >= 0; i--) {
+            double sum = 0.0;
+            for (int j = i + 1; j < n; j++) {
+                sum += matrix[i][j] * x[j];
+            }
+            x[i] = (b[i] - sum) / matrix[i][i];
+        }
+
+        return x;
     }
 }
